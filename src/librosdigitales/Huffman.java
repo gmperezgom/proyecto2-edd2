@@ -2,27 +2,19 @@ package librosdigitales;
 
 import java.util.Base64;
 
-/**
- * Compresion y descompresion de texto con el algoritmo de Huffman.
- *
- * El resultado comprimido es un texto de 4 lineas:
- *   1) HUFFMAN                       (marca del formato)
- *   2) cantidad de caracteres        (para saber cuando parar al descomprimir)
- *   3) tabla de frecuencias          (codigo:frecuencia;codigo:frecuencia;...)
- *   4) bits comprimidos              (empaquetados en bytes y escritos en Base64)
- *
- * Al descomprimir se reconstruye el arbol con la misma tabla, y como el
- * armado del arbol es determinista, se obtienen los mismos codigos.
- */
+// Esta clase comprime y descomprime texto mediante Huffman. Guarda una marca, la cantidad de caracteres, la tabla de frecuencias y los bytes comprimidos en Base64.
 public class Huffman {
 
+    // Texto que identifica el formato del archivo Huffman.
     private static final String MARCA = "HUFFMAN";
+    // Cantidad de valores posibles del tipo char de Java.
     private static final int TOTAL_CARACTERES = 65536;
 
+    // El constructor privado evita crear objetos de esta clase de métodos estáticos.
     private Huffman() {
     }
 
-    /** Comprime un texto y devuelve el contenido listo para guardar en un archivo de texto. */
+    // Este método cuenta frecuencias, construye el árbol, genera códigos y empaqueta los bits para guardar el resultado como texto.
     public static String comprimir(String texto) {
         int[] frecuencias = new int[TOTAL_CARACTERES];
         for (int i = 0; i < texto.length(); i++) {
@@ -71,7 +63,7 @@ public class Huffman {
                 + Base64.getEncoder().encodeToString(bytes);
     }
 
-    /** Descomprime un contenido generado por comprimir() y devuelve el texto original. */
+    // Este método lee el formato Huffman, reconstruye el árbol y recorre los bits para recuperar los caracteres.
     public static String descomprimir(String comprimido) {
         String[] lineas = comprimido.split("\\r?\\n", -1);
         if (lineas.length < 4 || !lineas[0].trim().equals(MARCA)) {
@@ -116,7 +108,7 @@ public class Huffman {
         return resultado.toString();
     }
 
-    /** Arma el arbol de Huffman a partir de la tabla de frecuencias. */
+    // Este método combina los dos nodos de menor frecuencia hasta obtener la raíz del árbol de Huffman.
     private static NodoHuffman construirArbol(int[] frecuencias) {
         MonticuloMinimo monticulo = new MonticuloMinimo();
         for (int c = 0; c < TOTAL_CARACTERES; c++) {
@@ -135,7 +127,7 @@ public class Huffman {
         return monticulo.extraerMinimo();
     }
 
-    /** Recorre el arbol y guarda el codigo binario de cada hoja. */
+    // Este método recorre el árbol de forma recursiva: agrega 0 hacia la izquierda y 1 hacia la derecha.
     private static void generarCodigos(NodoHuffman nodo, String prefijo, String[] codigos) {
         if (nodo.esHoja()) {
             codigos[nodo.getCaracter()] = prefijo.isEmpty() ? "0" : prefijo;

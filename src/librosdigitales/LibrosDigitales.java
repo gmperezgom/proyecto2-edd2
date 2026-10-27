@@ -5,31 +5,36 @@ import java.io.IOException;
 import java.math.BigInteger;
 import java.util.Scanner;
 
-/**
- * Cliente de la aplicacion de libros digitales (clase principal).
- * Flujo: configuracion -> login -> menu (explorar catalogo, lectura local,
- * cerrar sesion, salir).
- */
+// Esta clase controla la aplicación cliente: carga la configuración, autentica usuarios y presenta las opciones de lectura, descarga y cierre de sesión.
 public class LibrosDigitales {
 
+    // Nombre del archivo que se busca en el directorio de ejecución.
     private static final String ARCHIVO_CONFIG = "config.txt";
 
+    // Lector de las entradas del usuario en consola.
     private Scanner teclado;
+    // Configuración de las rutas utilizadas por el cliente.
     private Configuracion config;
+    // Objeto que permite consultar los archivos del servidor.
     private RepositorioServidor servidor;
+    // Lista de usuarios cargada al iniciar la aplicación.
     private ListaEnlazada<Usuario> usuarios;
+    // Lista de libros disponibles cargada al iniciar la aplicación.
     private ListaEnlazada<Libro> catalogo;
+    // Usuario autenticado; al cerrar sesión se establece en null.
     private Usuario usuarioActual;
 
+    // Este constructor prepara el lector de las entradas que se escriben en consola.
     public LibrosDigitales() {
         this.teclado = new Scanner(System.in);
     }
 
+    // Este método es el punto de entrada para ejecutar esta clase.
     public static void main(String[] args) {
         new LibrosDigitales().iniciar();
     }
 
-    /** Carga la configuracion y los catalogos del servidor, y arranca el ciclo de login. */
+    // Este método carga la configuración y los datos del servidor. Después controla el ciclo de inicio y cierre de sesión.
     public void iniciar() {
         try {
             config = Configuracion.cargar(ARCHIVO_CONFIG);
@@ -52,9 +57,7 @@ public class LibrosDigitales {
         System.out.println("Hasta luego.");
     }
 
-    // ---------------------------------------------------------------- Login
-
-    /** Pide usuario y clave. Devuelve false si el usuario escribe SALIR. */
+    // Este método solicita las credenciales y compara el hash de la contraseña. Devuelve false si se escribe SALIR como usuario.
     private boolean pantallaLogin() {
         System.out.println("\n===== INICIO DE SESION (escriba SALIR para terminar) =====");
         while (true) {
@@ -78,6 +81,7 @@ public class LibrosDigitales {
         }
     }
 
+    // Este método busca un usuario por su nombre y devuelve null si no está registrado.
     private Usuario buscarUsuario(String nombre) {
         for (int i = 0; i < usuarios.getTamano(); i++) {
             Usuario u = usuarios.obtener(i);
@@ -88,9 +92,7 @@ public class LibrosDigitales {
         return null;
     }
 
-    // ----------------------------------------------------------------- Menu
-
-    /** Muestra el menu. Devuelve true si se cerro sesion (volver al login), false si se sale. */
+    // Este método procesa el menú. Devuelve true para volver al inicio de sesión y false para terminar la aplicación.
     private boolean menuPrincipal() {
         while (true) {
             System.out.println("\n===== MENU PRINCIPAL =====");
@@ -120,8 +122,7 @@ public class LibrosDigitales {
         }
     }
 
-    // ------------------------------------------------------------- Catalogo
-
+    // Este método muestra los libros y permite seleccionar uno o regresar al menú anterior.
     private void explorarCatalogo() {
         while (true) {
             System.out.println("\n===== CATALOGO =====");
@@ -144,7 +145,7 @@ public class LibrosDigitales {
         }
     }
 
-    /** Premium elige entre leer o descargar; los demas leen en linea directamente. */
+    // Este método permite al usuario Premium elegir lectura o descarga; al usuario estándar le inicia la lectura.
     private void procesarLibro(Libro libro) {
         if (!usuarioActual.isPremium()) {
             leerEnLinea(libro);
@@ -163,8 +164,7 @@ public class LibrosDigitales {
         }
     }
 
-    // --------------------------------------------------------- Lectura online
-
+    // Este método guarda la copia cifrada local, prepara la clave, descifra el contenido y lo muestra en consola.
     private void leerEnLinea(Libro libro) {
         try {
             String rutaCopia = copiarLibroCifrado(libro);
@@ -180,8 +180,7 @@ public class LibrosDigitales {
         }
     }
 
-    // --------------------------------------------------------------- Descarga
-
+    // Este método guarda la copia cifrada, descifra el libro y almacena una versión comprimida con Huffman.
     private void descargar(Libro libro) {
         try {
             String rutaCopia = copiarLibroCifrado(libro);
@@ -202,8 +201,7 @@ public class LibrosDigitales {
         }
     }
 
-    // ----------------------------------------------------------- Lectura local
-
+    // Este método comprueba que el usuario sea Premium y permite descomprimir y mostrar una descarga local.
     private void lecturaLocal() {
         if (!usuarioActual.isPremium()) {
             System.out.println("La lectura local es solo para usuarios Premium.");
@@ -246,13 +244,7 @@ public class LibrosDigitales {
         }
     }
 
-    // ---------------------------------------------------------------- Apoyo
-
-    /**
-     * Lleva el libro cifrado del servidor a la carpeta local del cliente.
-     * El contenido pasa por la aplicacion (se lee y se escribe), no se copia el archivo.
-     * La copia cifrada se queda en la carpeta del cliente.
-     */
+    // Este método lee el libro cifrado del servidor y lo escribe en copias_cifradas del cliente. La copia permanece disponible.
     private String copiarLibroCifrado(Libro libro) throws IOException {
         String cifrado = servidor.leerLibroCifrado(libro.getIsbn());
         String destino = ArchivoUtil.unir(ArchivoUtil.unir(config.getRutaLocal(), "copias_cifradas"),
@@ -261,7 +253,7 @@ public class LibrosDigitales {
         return destino;
     }
 
-    /** Intercambio Diffie-Hellman con el servidor; devuelve el cifrador 3DES con la clave resultante. */
+    // Este método simula ambos lados del cálculo Diffie-Hellman dentro del cliente y prepara el cifrador con el secreto obtenido.
     private Cifrador3DES negociarClave() {
         BigInteger publicaCliente = DiffieHellman.calcularPublica(DiffieHellman.PRIVADA_CLIENTE);
         BigInteger publicaServidor = DiffieHellman.calcularPublica(DiffieHellman.PRIVADA_SERVIDOR);
@@ -272,16 +264,18 @@ public class LibrosDigitales {
         return new Cifrador3DES(secreto);
     }
 
-    /** Acorta un numero grande para mostrarlo en consola. */
+    // Este método abrevia un número en hexadecimal para mostrarlo en consola.
     private String resumen(BigInteger n) {
         String s = n.toString(16);
         return s.substring(0, 16) + "..." + s.substring(s.length() - 8);
     }
 
+    // Este método construye la ruta local del archivo del libro comprimido con extensión .huf.txt.
     private String rutaDescarga(String isbn) {
         return ArchivoUtil.unir(ArchivoUtil.unir(config.getRutaLocal(), "descargas"), isbn + ".huf.txt");
     }
 
+    // Este método busca el título asociado al ISBN; si no existe, devuelve un texto indicando que está fuera del catálogo.
     private String tituloDe(String isbn) {
         for (int i = 0; i < catalogo.getTamano(); i++) {
             if (catalogo.obtener(i).getIsbn().equals(isbn)) {
@@ -291,6 +285,7 @@ public class LibrosDigitales {
         return "(libro fuera del catalogo)";
     }
 
+    // Este método convierte la entrada de consola a un entero y devuelve -1 si el formato no es válido.
     private int leerEntero() {
         try {
             return Integer.parseInt(teclado.nextLine().trim());

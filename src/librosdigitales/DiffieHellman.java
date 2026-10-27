@@ -2,36 +2,31 @@ package librosdigitales;
 
 import java.math.BigInteger;
 
-/**
- * Intercambio de claves Diffie-Hellman con valores predeterminados.
- *
- * Cliente y servidor comparten p y g (publicos). Cada uno tiene un numero
- * privado, calcula su clave publica (g^privada mod p), la envia al otro y
- * ambos terminan con el mismo secreto: (publicaDelOtro^privada) mod p.
- */
+// Esta clase realiza los cálculos de Diffie-Hellman con valores predeterminados. En esta versión las claves privadas de ambos participantes están definidas en el código.
 public class DiffieHellman {
 
-    /** Primo publico p = 2^521 - 1 (primo de Mersenne). */
+    // Módulo público: primo de Mersenne calculado como 2 elevado a 521 menos 1.
     public static final BigInteger P = BigInteger.ONE.shiftLeft(521).subtract(BigInteger.ONE);
 
-    /** Generador publico g. */
+    // Base pública para las potencias modulares de Diffie-Hellman.
     public static final BigInteger G = BigInteger.valueOf(5);
 
-    /** Numero privado del cliente (predeterminado). */
+    // Valor privado predeterminado del cliente para la simulación.
     public static final BigInteger PRIVADA_CLIENTE = new BigInteger("918273645564738291827364556473829101");
 
-    /** Numero privado del servidor (predeterminado). */
+    // Valor privado predeterminado del servidor para la simulación.
     public static final BigInteger PRIVADA_SERVIDOR = new BigInteger("102938475610293847561029384756102938");
 
+    // El constructor privado evita crear objetos de esta clase de métodos estáticos.
     private DiffieHellman() {
     }
 
-    /** Calcula la clave publica: g^privada mod p. */
+    // Este método calcula la clave pública mediante la operación g elevada a la clave privada, módulo p.
     public static BigInteger calcularPublica(BigInteger privada) {
         return G.modPow(privada, P);
     }
 
-    /** Calcula el secreto compartido: publicaDelOtro^privada mod p. */
+    // Este método calcula el secreto con la clave pública del otro participante y la clave privada propia, módulo p.
     public static BigInteger calcularSecreto(BigInteger publicaDelOtro, BigInteger privada) {
         return publicaDelOtro.modPow(privada, P);
     }

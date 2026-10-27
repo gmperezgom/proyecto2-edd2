@@ -3,13 +3,14 @@ package librosdigitales;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
-/** Funcion hash (SHA-256) para guardar y comparar contrasenas sin almacenarlas en claro. */
+// Esta clase calcula el hash SHA-256 de una contraseña para compararlo con el hash almacenado en el archivo de usuarios.
 public class HashUtil {
 
+    // El constructor privado evita crear objetos de esta clase de métodos estáticos.
     private HashUtil() {
     }
 
-    /** Devuelve el SHA-256 del texto, en hexadecimal minuscula. */
+    // Este método calcula SHA-256 con el texto en UTF-8 y devuelve el hash en hexadecimal de 64 caracteres.
     public static String sha256(String texto) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");

@@ -1,24 +1,25 @@
 package librosdigitales;
 
-/**
- * Monticulo minimo (cola de prioridad) de nodos de Huffman, implementado a mano
- * sobre un arreglo que crece cuando se llena. Siempre saca primero el nodo
- * con menor frecuencia.
- */
+// Esta clase implementa un montículo mínimo con un arreglo que aumenta su capacidad cuando se llena. Permite extraer el nodo de Huffman con menor frecuencia.
 public class MonticuloMinimo {
 
+    // Arreglo que almacena los nodos del montículo.
     private NodoHuffman[] datos;
+    // Cantidad de elementos que contiene la estructura.
     private int tamano;
 
+    // Este constructor reserva espacio inicial para 16 nodos y deja el montículo vacío.
     public MonticuloMinimo() {
         this.datos = new NodoHuffman[16];
         this.tamano = 0;
     }
 
+    // Este método devuelve la cantidad de elementos.
     public int getTamano() {
         return tamano;
     }
 
+    // Este método agrega un nodo y lo sube hasta conservar el orden del montículo.
     public void insertar(NodoHuffman nodo) {
         if (tamano == datos.length) {
             NodoHuffman[] nuevo = new NodoHuffman[datos.length * 2];
@@ -32,7 +33,7 @@ public class MonticuloMinimo {
         tamano++;
     }
 
-    /** Saca y devuelve el nodo con menor frecuencia (null si esta vacio). */
+    // Este método retira el nodo de menor frecuencia y reorganiza el montículo. Devuelve null si está vacío.
     public NodoHuffman extraerMinimo() {
         if (tamano == 0) {
             return null;
@@ -47,6 +48,7 @@ public class MonticuloMinimo {
         return minimo;
     }
 
+    // Este método compara el nodo con su padre y lo intercambia mientras su frecuencia sea menor.
     private void subir(int i) {
         while (i > 0) {
             int padre = (i - 1) / 2;
@@ -59,6 +61,7 @@ public class MonticuloMinimo {
         }
     }
 
+    // Este método compara el nodo con sus hijos y lo intercambia con el de menor frecuencia cuando corresponde.
     private void bajar(int i) {
         while (true) {
             int izq = 2 * i + 1;
@@ -78,6 +81,7 @@ public class MonticuloMinimo {
         }
     }
 
+    // Este método intercambia dos posiciones del arreglo del montículo.
     private void intercambiar(int a, int b) {
         NodoHuffman temp = datos[a];
         datos[a] = datos[b];

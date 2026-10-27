@@ -1,35 +1,36 @@
 package librosdigitales;
 
-/**
- * Lista enlazada simple generica, implementada a mano.
- * Se usa en todo el proyecto en lugar de ArrayList, LinkedList, etc.
- *
- * @param <T> tipo de dato que guarda la lista
- */
+// Esta clase implementa una lista enlazada simple y genérica para almacenar elementos sin utilizar las listas de la biblioteca de Java.
 public class ListaEnlazada<T> {
 
-    /** Nodo interno de la lista. */
     private class Nodo {
+        // Elemento almacenado en el nodo de la lista.
         private T dato;
+        // Referencia al siguiente nodo de la lista.
         private Nodo siguiente;
 
+        // Este constructor guarda el dato del nodo y deja su enlace siguiente vacío.
         private Nodo(T dato) {
             this.dato = dato;
             this.siguiente = null;
         }
     }
 
+    // Referencia al primer nodo de la lista.
     private Nodo cabeza;
+    // Referencia al último nodo para agregar elementos al final.
     private Nodo cola;
+    // Cantidad de elementos que contiene la estructura.
     private int tamano;
 
+    // Este constructor crea una lista vacía, sin cabeza ni cola y con tamaño cero.
     public ListaEnlazada() {
         this.cabeza = null;
         this.cola = null;
         this.tamano = 0;
     }
 
-    /** Agrega un elemento al final de la lista. */
+    // Este método agrega un elemento al final de la lista y actualiza su tamaño.
     public void agregar(T dato) {
         Nodo nuevo = new Nodo(dato);
         if (cabeza == null) {
@@ -42,7 +43,7 @@ public class ListaEnlazada<T> {
         tamano++;
     }
 
-    /** Devuelve el elemento en la posicion indicada (empieza en 0), o null si no existe. */
+    // Este método devuelve el elemento de una posición, comenzando en cero, o null si el índice no existe.
     public T obtener(int indice) {
         if (indice < 0 || indice >= tamano) {
             return null;
@@ -54,10 +55,12 @@ public class ListaEnlazada<T> {
         return actual.dato;
     }
 
+    // Este método devuelve la cantidad de elementos.
     public int getTamano() {
         return tamano;
     }
 
+    // Este método indica si la lista no contiene elementos.
     public boolean estaVacia() {
         return tamano == 0;
     }

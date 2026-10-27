@@ -7,13 +7,17 @@ import java.util.Base64;
 import javax.crypto.Cipher;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
-//Esta clase es para realizar el cifrado simetrico 3DES
 
-public class Cifrador3DES{
+// Esta clase cifra y descifra el contenido de los libros mediante 3DES. El resultado cifrado se representa en Base64 para guardarlo como texto.
+public class Cifrador3DES {
+
+    // Clave simétrica utilizada por 3DES.
     private SecretKeySpec clave;
+    // Vector de inicialización utilizado por el modo CBC.
     private IvParameterSpec iv;
 
-        public Cifrador3DES(BigInteger secretoCompartido) {
+    // Este constructor aplica SHA-256 al secreto compartido y obtiene 24 bytes para la clave 3DES y 8 bytes para el vector de inicialización.
+    public Cifrador3DES(BigInteger secretoCompartido) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
             byte[] resumen = md.digest(secretoCompartido.toByteArray());
@@ -28,7 +32,7 @@ public class Cifrador3DES{
         }
     }
 
-    //este metodo sirve para cifrar un texto plano y devuelve un resultado en Base64
+    // Este método convierte el texto original en contenido cifrado con 3DES y lo devuelve en Base64.
     public String cifrar(String textoPlano) {
         try {
             Cipher cipher = Cipher.getInstance("DESede/CBC/PKCS5Padding");
@@ -40,8 +44,8 @@ public class Cifrador3DES{
         }
     }
 
-    //este metodo sirve para descifrar un texto en Base64 y devuelve el texto plano
-        public String descifrar(String textoCifradoBase64) {
+    // Este método decodifica el contenido Base64 y utiliza 3DES para recuperar el texto original.
+    public String descifrar(String textoCifradoBase64) {
         try {
             Cipher cipher = Cipher.getInstance("DESede/CBC/PKCS5Padding");
             cipher.init(Cipher.DECRYPT_MODE, clave, iv);
@@ -51,5 +55,4 @@ public class Cifrador3DES{
             throw new IllegalStateException("Error al descifrar (clave incorrecta o archivo danado)", e);
         }
     }
-
 }

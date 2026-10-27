@@ -3,16 +3,10 @@ package librosdigitales;
 import java.io.IOException;
 import java.math.BigInteger;
 
-/**
- * Herramienta para preparar la carpeta del servidor con datos de prueba:
- * usuarios.txt, catalogo.txt y libros/ISBN.txt (cifrados con 3DES).
- * Tambien crea el config.txt del cliente.
- *
- * Uso: ejecutar este archivo (Run File) y, si quiere, pasar la ruta del
- * servidor como argumento. Por defecto usa la carpeta "servidor".
- */
+// Esta clase prepara los archivos de prueba: usuarios, catálogo, libros cifrados y configuración. Al ejecutarla se reemplazan los archivos que genera.
 public class GeneradorServidor {
 
+    // Este método es el punto de entrada para ejecutar esta clase.
     public static void main(String[] args) throws IOException {
         String ruta = args.length > 0 ? args[0] : "servidor";
 
