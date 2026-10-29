@@ -11,24 +11,14 @@ public final class RepositorioServidor {
     public String getRutaServidor() { return rutaServidor; }
     public void setRutaServidor(String ruta) { rutaServidor = ruta; }
 
-    // Lee usuarios; el servidor los vuelve a consultar en cada solicitud autenticada.
+    // Comparte el mismo bloqueo y validador que la herramienta administrativa.
     public ListaEnlazada<Usuario> cargarUsuarios() throws IOException {
-        ListaEnlazada<Usuario> lista = new ListaEnlazada<>();
-        int numero = 0;
-        for (String linea : ArchivoUtil.leerTexto(ArchivoUtil.unir(rutaServidor,"usuarios.txt")).split("\\r?\\n", -1)) {
-            numero++;
-            if (linea.trim().isEmpty()) continue;
-            String[] p = linea.split("\\|", -1);
-            if (p.length != 3 || !p[0].trim().matches("[\\p{L}\\p{N}_.-]{1,64}")
-                    || !p[1].trim().matches("[a-fA-F0-9]{64}")
-                    || !(p[2].trim().equals("true") || p[2].trim().equals("false")))
-                throw new IOException("Registro de usuarios inválido en línea " + numero);
-            for (int i=0;i<lista.getTamano();i++)
-                if (lista.obtener(i).getNombre().equals(p[0].trim())) throw new IOException("Usuario duplicado en línea " + numero);
-            lista.agregar(new Usuario(p[0].trim(),p[1].trim().toLowerCase(),Boolean.parseBoolean(p[2].trim())));
-            if (lista.getTamano()>10000) throw new IOException("Demasiados usuarios.");
-        }
-        return lista;
+        return new RepositorioUsuarios(rutaServidor).cargarUsuarios();
+    }
+
+    // Verifica contraseña y suspensión contra los datos vigentes del servidor.
+    public Usuario autenticar(String nombre, String hash) throws IOException {
+        return new RepositorioUsuarios(rutaServidor).autenticar(nombre, hash);
     }
 
     public ListaEnlazada<Libro> cargarCatalogo() throws IOException {

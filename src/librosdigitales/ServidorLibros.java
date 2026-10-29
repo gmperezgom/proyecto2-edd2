@@ -3,7 +3,6 @@ package librosdigitales;
 import java.io.*;
 import java.math.BigInteger;
 import java.net.*;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.security.*;
 import java.util.Base64;
@@ -100,13 +99,8 @@ public final class ServidorLibros implements AutoCloseable {
             throw new IOException("Operación desconocida.");
         String nombre=Protocolo.decodificar(p[1]);
         if(!p[2].matches("[a-f0-9]{64}")) return "AUTH";
-        Usuario usuario=null;
-        ListaEnlazada<Usuario> usuarios=repositorio.cargarUsuarios();
-        for(int i=0;i<usuarios.getTamano();i++) {
-            Usuario candidato=usuarios.obtener(i);
-            if(candidato.getNombre().equals(nombre) && HashUtil.iguales(candidato.getHashClave().getBytes(StandardCharsets.US_ASCII),p[2].getBytes(StandardCharsets.US_ASCII)))
-                usuario=candidato;
-        }
+        // Consulta la categoría, contraseña y suspensión actuales en cada petición.
+        Usuario usuario=repositorio.autenticar(nombre,p[2]);
         if(usuario==null) return "AUTH";
         if(p[0].equals("LOGIN")) return "OK\n"+Protocolo.codificar(usuario.getNombre())+"\n"+usuario.isPremium();
         if(!p[4].equals("LEER") && !p[4].equals("DESCARGAR")) throw new IOException("Acción de libro inválida.");
