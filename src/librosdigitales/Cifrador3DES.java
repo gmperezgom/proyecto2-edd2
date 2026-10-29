@@ -2,57 +2,52 @@ package librosdigitales;
 
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
+import java.security.GeneralSecurityException;
+import java.util.Arrays;
 import java.util.Base64;
 import javax.crypto.Cipher;
-import javax.crypto.spec.IvParameterSpec;
-import javax.crypto.spec.SecretKeySpec;
+import javax.crypto.spec.*;
 
-// Esta clase cifra y descifra el contenido de los libros mediante 3DES. El resultado cifrado se representa en Base64 para guardarlo como texto.
-public class Cifrador3DES {
+// Esta clase utiliza 3DES/CBC con IV aleatorio y HMAC-SHA256 antes de descifrar.
+// Formato: TDES2|IV en Base64|contenido cifrado en Base64|HMAC en Base64.
+public final class Cifrador3DES {
+    private final byte[] clave;
+    private final byte[] claveMac;
 
-    // Clave simétrica utilizada por 3DES.
-    private SecretKeySpec clave;
-    // Vector de inicialización utilizado por el modo CBC.
-    private IvParameterSpec iv;
-
-    // Este constructor aplica SHA-256 al secreto compartido y obtiene 24 bytes para la clave 3DES y 8 bytes para el vector de inicialización.
-    public Cifrador3DES(BigInteger secretoCompartido) {
-        try {
-            MessageDigest md = MessageDigest.getInstance("SHA-256");
-            byte[] resumen = md.digest(secretoCompartido.toByteArray());
-            byte[] bytesClave = new byte[24];
-            byte[] bytesIv = new byte[8];
-            System.arraycopy(resumen, 0, bytesClave, 0, 24);
-            System.arraycopy(resumen, 24, bytesIv, 0, 8);
-            this.clave = new SecretKeySpec(bytesClave, "DESede");
-            this.iv = new IvParameterSpec(bytesIv);
-        } catch (Exception e) {
-            throw new IllegalStateException("No se pudo preparar la clave 3DES", e);
-        }
+    // Deriva claves independientes desde el secreto compartido de Diffie-Hellman.
+    public Cifrador3DES(BigInteger secreto) { this(secreto.toByteArray()); }
+    public Cifrador3DES(byte[] material) {
+        if (material == null || material.length < 16) throw new IllegalArgumentException("Material de clave insuficiente.");
+        clave = Arrays.copyOf(HashUtil.derivar(material, "LIBROS-V2-3DES"), 24);
+        claveMac = HashUtil.derivar(material, "LIBROS-V2-HMAC");
     }
 
-    // Este método convierte el texto original en contenido cifrado con 3DES y lo devuelve en Base64.
-    public String cifrar(String textoPlano) {
+    // Cifra con un IV nuevo y autentica la versión, el IV y los bytes cifrados.
+    public String cifrar(String texto) {
         try {
-            Cipher cipher = Cipher.getInstance("DESede/CBC/PKCS5Padding");
-            cipher.init(Cipher.ENCRYPT_MODE, clave, iv);
-            byte[] cifrado = cipher.doFinal(textoPlano.getBytes(StandardCharsets.UTF_8));
-            return Base64.getEncoder().encodeToString(cifrado);
-        } catch (Exception e) {
-            throw new IllegalStateException("Error al cifrar", e);
-        }
+            byte[] iv = HashUtil.aleatorios(8);
+            Cipher motor = Cipher.getInstance("DESede/CBC/PKCS5Padding");
+            motor.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(clave, "DESede"), new IvParameterSpec(iv));
+            String cuerpo = "TDES2|" + b64(iv) + "|" + b64(motor.doFinal(texto.getBytes(StandardCharsets.UTF_8)));
+            return cuerpo + "|" + b64(HashUtil.hmac(claveMac, cuerpo.getBytes(StandardCharsets.UTF_8)));
+        } catch (GeneralSecurityException e) { throw new IllegalStateException("No se pudo cifrar el contenido.", e); }
     }
 
-    // Este método decodifica el contenido Base64 y utiliza 3DES para recuperar el texto original.
-    public String descifrar(String textoCifradoBase64) {
+    // Verifica HMAC antes de descifrar. Una clave errónea o un archivo alterado se rechazan.
+    public String descifrar(String paquete) {
         try {
-            Cipher cipher = Cipher.getInstance("DESede/CBC/PKCS5Padding");
-            cipher.init(Cipher.DECRYPT_MODE, clave, iv);
-            byte[] cifrado = Base64.getDecoder().decode(textoCifradoBase64.trim());
-            return new String(cipher.doFinal(cifrado), StandardCharsets.UTF_8);
-        } catch (Exception e) {
-            throw new IllegalStateException("Error al descifrar (clave incorrecta o archivo danado)", e);
-        }
+            String[] campos = paquete.split("\\|", -1);
+            if (campos.length != 4 || !campos[0].equals("TDES2")) throw new IllegalArgumentException();
+            byte[] iv = Base64.getDecoder().decode(campos[1]);
+            byte[] cifrado = Base64.getDecoder().decode(campos[2]);
+            byte[] recibido = Base64.getDecoder().decode(campos[3]);
+            if (iv.length != 8 || cifrado.length == 0 || cifrado.length % 8 != 0 || recibido.length != 32) throw new IllegalArgumentException();
+            String cuerpo = campos[0] + "|" + campos[1] + "|" + campos[2];
+            if (!HashUtil.iguales(recibido, HashUtil.hmac(claveMac, cuerpo.getBytes(StandardCharsets.UTF_8)))) throw new IllegalArgumentException();
+            Cipher motor = Cipher.getInstance("DESede/CBC/PKCS5Padding");
+            motor.init(Cipher.DECRYPT_MODE, new SecretKeySpec(clave, "DESede"), new IvParameterSpec(iv));
+            return ArchivoUtil.decodificar(motor.doFinal(cifrado));
+        } catch (Exception e) { throw new IllegalArgumentException("Clave incorrecta o contenido cifrado dañado.", e); }
     }
+    private static String b64(byte[] datos) { return Base64.getEncoder().encodeToString(datos); }
 }

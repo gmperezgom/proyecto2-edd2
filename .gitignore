@@ -1,0 +1,8 @@
+bin/
+work/
+cliente*/
+servidor*/
+servidor-config*.txt
+config.txt
+config-cliente-v2.ejemplo.txt
+*.lock
