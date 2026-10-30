@@ -1,55 +1,74 @@
 package librosdigitales;
 
-import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.RandomAccessFile;
-import java.nio.channels.FileChannel;
-import java.nio.channels.FileLock;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.*;
 
-//Esta clase contiene las utilidades para leer y escribir archivos de texto en UTF-8.
+// Esta clase lee UTF-8 y escribe mediante archivos temporales para evitar copias parciales.
+public final class ArchivoUtil {
+    public static final int MAX_BYTES = 32 * 1024 * 1024;
+    private ArchivoUtil() { }
 
-public class ArchivoUtil{
-    private ArchivoUtil(){
+    // Lee un archivo con un límite de tamaño y rechaza texto UTF-8 dañado.
+    public static String leerTexto(String ruta) throws IOException {
+        Path archivo = Path.of(ruta);
+        if (!Files.isRegularFile(archivo)) throw new IOException("No existe el archivo: " + archivo.toAbsolutePath());
+        if (Files.size(archivo) > MAX_BYTES) throw new IOException("Archivo demasiado grande: " + archivo);
+        try (java.io.InputStream entrada = Files.newInputStream(archivo)) {
+            byte[] datos = entrada.readNBytes(MAX_BYTES + 1);
+            if (datos.length > MAX_BYTES) throw new IOException("Archivo demasiado grande.");
+            String texto = decodificar(datos);
+            return texto.startsWith("\uFEFF") ? texto.substring(1) : texto;
+        }
     }
 
-    //metodo para leer todo un archivo de texto
-    public static String leerTexto(String ruta) throws IOException{
-        try (RandomAccessFile raf = new RandomAccessFile(ruta, "r");
-             FileChannel canal = raf.getChannel()) {
-            FileLock bloqueo = null;
-            try {
-                //este es el bloqueo para solo lectura
-                bloqueo = canal.lock(0L, Long.MAX_VALUE, true);
-            } catch (Exception e) {
-                // Algunas carpetas compartidas no soportan bloqueos; se lee igual.
+    // Decodifica sin sustituir silenciosamente bytes inválidos.
+    public static String decodificar(byte[] datos) throws IOException {
+        try {
+            String texto = StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(datos)).toString();
+            return texto;
+        } catch (CharacterCodingException e) { throw new IOException("El contenido no es UTF-8 válido.", e); }
+    }
+
+    // Reemplaza el destino después de escribir completamente un temporal en la misma carpeta.
+    public static synchronized void escribirTexto(String ruta, String texto) throws IOException {
+        byte[] datos = texto.getBytes(StandardCharsets.UTF_8);
+        if (datos.length > MAX_BYTES) throw new IOException("El contenido excede el límite de tamaño.");
+        Path destino = Path.of(ruta).toAbsolutePath().normalize();
+        Files.createDirectories(destino.getParent());
+        // El bloqueo coordina escrituras de procesos que comparten la misma carpeta local.
+        Path cerrojo = destino.resolveSibling("." + destino.getFileName() + ".lock");
+        try (java.nio.channels.FileChannel canal = java.nio.channels.FileChannel.open(cerrojo,
+                StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+             java.nio.channels.FileLock bloqueo = canal.lock()) {
+        if (!bloqueo.isValid()) throw new IOException("No se pudo bloquear el destino.");
+        Path temporal = Files.createTempFile(destino.getParent(), ".libros-", ".tmp");
+        try {
+            Files.write(temporal, datos);
+            // Windows puede mantener un destino abierto brevemente mientras otro proceso lo lee.
+            for (int intento = 0; ; intento++) {
+                try {
+                    try { Files.move(temporal, destino, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE); }
+                    catch (AtomicMoveNotSupportedException e) { Files.move(temporal, destino, StandardCopyOption.REPLACE_EXISTING); }
+                    break;
+                } catch (AccessDeniedException e) {
+                    if (intento == 5) throw e;
+                    try { Thread.sleep(50L); }
+                    catch (InterruptedException interrumpida) {
+                        Thread.currentThread().interrupt();
+                        throw new java.io.InterruptedIOException("Escritura interrumpida.");
+                    }
+                }
             }
-            byte[] datos = new byte[(int) raf.length()];
-            raf.readFully(datos);
-            if (bloqueo != null) {
-                bloqueo.release();
-            }
-            return new String(datos, StandardCharsets.UTF_8);
+        } finally { Files.deleteIfExists(temporal); }
         }
     }
 
-    //este metodo escribe un texto en un archivo (se hace un reemplazo si existe) y crea las carpetas que son necesarias
-    public static void escribirTexto(String ruta, String texto) throws IOException{
-        File archivo = new File(ruta);
-        File padre = archivo.getParentFile();
-        if (padre != null && !padre.exists()) {
-            padre.mkdirs();
-        }
-        try (FileOutputStream salida = new FileOutputStream(archivo)) {
-            salida.write(texto.getBytes(StandardCharsets.UTF_8));
-        }
-
-    }
-
-    //metodo para unir dos partes de una ruta con el separador del sistema
-    public static String unir(String base, String parte){
-        return new File(base,parte).getPath();
-    }
-
+    // Une rutas según el separador del sistema operativo.
+    public static String unir(String base, String parte) { return Path.of(base, parte).toString(); }
 }

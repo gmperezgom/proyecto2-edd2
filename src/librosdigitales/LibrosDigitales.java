@@ -1,296 +1,336 @@
 package librosdigitales;
 
-import java.io.File;
+import java.io.Console;
+import java.io.IOError;
 import java.io.IOException;
-import java.math.BigInteger;
-import java.util.Scanner;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.NoSuchElementException;
 
-// Esta clase controla la aplicación cliente: carga la configuración, autentica usuarios y presenta las opciones de lectura, descarga y cierre de sesión.
-public class LibrosDigitales {
+// Esta clase presenta una interfaz de consola para autenticación, catálogo y lectura.
+// Mantiene los servicios y formatos del proyecto V2 y lee las contraseñas sin eco.
+public final class LibrosDigitales {
+    // La consola nativa evita diferencias del proveedor JLine en Windows con JDK recientes.
+    static { System.setProperty("jdk.console", "java.base"); }
 
-    // Nombre del archivo que se busca en el directorio de ejecución.
-    private static final String ARCHIVO_CONFIG = "config.txt";
-
-    // Lector de las entradas del usuario en consola.
-    private Scanner teclado;
-    // Configuración de las rutas utilizadas por el cliente.
+    private static final String BORDE = "======================================================================";
+    private static final int LINEAS_POR_PAGINA = 20;
+    private static final int ANCHO_LECTURA = 78;
+    private final Console consola = System.console();
     private Configuracion config;
-    // Objeto que permite consultar los archivos del servidor.
-    private RepositorioServidor servidor;
-    // Lista de usuarios cargada al iniciar la aplicación.
-    private ListaEnlazada<Usuario> usuarios;
-    // Lista de libros disponibles cargada al iniciar la aplicación.
-    private ListaEnlazada<Libro> catalogo;
-    // Usuario autenticado; al cerrar sesión se establece en null.
+    private ConexionServidor conexion;
+    private RepositorioLocal local;
+    private AutenticacionLocal autenticacionLocal;
+    private ListaEnlazada<Libro> catalogo = new ListaEnlazada<>();
     private Usuario usuarioActual;
+    private boolean sinConexion;
 
-    // Este constructor prepara el lector de las entradas que se escriben en consola.
-    public LibrosDigitales() {
-        this.teclado = new Scanner(System.in);
-    }
+    public LibrosDigitales() { }
 
-    // Este método es el punto de entrada para ejecutar esta clase.
+    // Se conservan config.txt por defecto y el argumento opcional --sin-conexion.
     public static void main(String[] args) {
-        new LibrosDigitales().iniciar();
+        String archivo = "config.txt";
+        boolean modoLocal = false;
+        for (String argumento : args) {
+            if (argumento.equals("--sin-conexion")) modoLocal = true;
+            else archivo = argumento;
+        }
+        try { new LibrosDigitales().iniciar(archivo, modoLocal); }
+        catch (NoSuchElementException e) { System.out.println("\nEntrada cerrada. Gracias por visitar tu biblioteca."); }
+        catch (IOError e) { System.out.println("\nNo se pudo leer la terminal. Abre una terminal interactiva y ejecuta el cliente nuevamente."); }
     }
+    public void iniciar() { iniciar("config.txt", false); }
 
-    // Este método carga la configuración y los datos del servidor. Después controla el ciclo de inicio y cierre de sesión.
-    public void iniciar() {
-        try {
-            config = Configuracion.cargar(ARCHIVO_CONFIG);
-            servidor = new RepositorioServidor(config.getRutaServidor());
-            usuarios = servidor.cargarUsuarios();
-            catalogo = servidor.cargarCatalogo();
-        } catch (IOException e) {
-            System.out.println("No se pudo conectar con el servidor: " + e.getMessage());
+    // La falta de red permite utilizar las descargas de una cuenta local previamente preparada.
+    public void iniciar(String archivo, boolean forzarLocal) {
+        if (consola == null) {
+            System.out.println("Para proteger tu contraseña, abre una terminal interactiva.");
+            System.out.println("Desde la raíz del proyecto ejecuta:");
+            System.out.println("java -cp bin librosdigitales.LibrosDigitales");
+            System.out.println("Usa Terminal > Nueva terminal; evita la consola de depuración y la entrada redirigida.");
             return;
         }
-        System.out.println("Conectado al servidor: " + config.getRutaServidor());
-
-        boolean seguir = true;
-        while (seguir) {
-            if (!pantallaLogin()) {
-                break; // el usuario eligio salir desde el login
-            }
-            seguir = menuPrincipal();
-        }
-        System.out.println("Hasta luego.");
-    }
-
-    // Este método solicita las credenciales y compara el hash de la contraseña. Devuelve false si se escribe SALIR como usuario.
-    private boolean pantallaLogin() {
-        System.out.println("\n===== INICIO DE SESION (escriba SALIR para terminar) =====");
-        while (true) {
-            System.out.print("Usuario: ");
-            String nombre = teclado.nextLine().trim();
-            if (nombre.equalsIgnoreCase("SALIR")) {
-                return false;
-            }
-            System.out.print("Contrasena: ");
-            String clave = teclado.nextLine();
-            String hash = HashUtil.sha256(clave);
-
-            Usuario encontrado = buscarUsuario(nombre);
-            if (encontrado != null && encontrado.getHashClave().equalsIgnoreCase(hash)) {
-                usuarioActual = encontrado;
-                System.out.println("Bienvenido, " + usuarioActual.getNombre()
-                        + (usuarioActual.isPremium() ? " (Premium)" : " (Estandar)"));
-                return true;
-            }
-            System.out.println("Usuario o contrasena incorrectos.");
-        }
-    }
-
-    // Este método busca un usuario por su nombre y devuelve null si no está registrado.
-    private Usuario buscarUsuario(String nombre) {
-        for (int i = 0; i < usuarios.getTamano(); i++) {
-            Usuario u = usuarios.obtener(i);
-            if (u.getNombre().equals(nombre)) {
-                return u;
-            }
-        }
-        return null;
-    }
-
-    // Este método procesa el menú. Devuelve true para volver al inicio de sesión y false para terminar la aplicación.
-    private boolean menuPrincipal() {
-        while (true) {
-            System.out.println("\n===== MENU PRINCIPAL =====");
-            System.out.println("1. Explorar catalogo");
-            System.out.println("2. Lectura local");
-            System.out.println("3. Cerrar sesion");
-            System.out.println("4. Salir");
-            System.out.print("Opcion: ");
-            String opcion = teclado.nextLine().trim();
-
-            switch (opcion) {
-                case "1":
-                    explorarCatalogo();
-                    break;
-                case "2":
-                    lecturaLocal();
-                    break;
-                case "3":
-                    usuarioActual = null;
-                    System.out.println("Sesion cerrada.");
-                    return true;
-                case "4":
-                    return false;
-                default:
-                    System.out.println("Opcion no valida.");
-            }
-        }
-    }
-
-    // Este método muestra los libros y permite seleccionar uno o regresar al menú anterior.
-    private void explorarCatalogo() {
-        while (true) {
-            System.out.println("\n===== CATALOGO =====");
-            for (int i = 0; i < catalogo.getTamano(); i++) {
-                Libro l = catalogo.obtener(i);
-                System.out.println((i + 1) + ". " + l.getTitulo() + " (ISBN " + l.getIsbn() + ")");
-            }
-            System.out.println("0. Volver");
-            System.out.print("Seleccione un libro: ");
-            int eleccion = leerEntero();
-            if (eleccion == 0) {
-                return;
-            }
-            Libro libro = catalogo.obtener(eleccion - 1);
-            if (libro == null) {
-                System.out.println("Opcion no valida.");
-                continue;
-            }
-            procesarLibro(libro);
-        }
-    }
-
-    // Este método permite al usuario Premium elegir lectura o descarga; al usuario estándar le inicia la lectura.
-    private void procesarLibro(Libro libro) {
-        if (!usuarioActual.isPremium()) {
-            leerEnLinea(libro);
-            return;
-        }
-        System.out.println("\n" + libro.getTitulo());
-        System.out.println("1. Leer en linea");
-        System.out.println("2. Descargar libro");
-        System.out.println("0. Volver");
-        System.out.print("Opcion: ");
-        int op = leerEntero();
-        if (op == 1) {
-            leerEnLinea(libro);
-        } else if (op == 2) {
-            descargar(libro);
-        }
-    }
-
-    // Este método guarda la copia cifrada local, prepara la clave, descifra el contenido y lo muestra en consola.
-    private void leerEnLinea(Libro libro) {
+        titulo("LIBROS DIGITALES", "Tu biblioteca, donde estés.");
+        System.out.println("Preparando tu biblioteca...");
         try {
-            String rutaCopia = copiarLibroCifrado(libro);
-            Cifrador3DES cifrador = negociarClave();
-            String texto = cifrador.descifrar(ArchivoUtil.leerTexto(rutaCopia));
-            System.out.println("\n----- " + libro.getTitulo() + " -----");
-            System.out.println(texto);
-            System.out.println("----- Fin del libro -----");
-        } catch (IOException e) {
-            System.out.println("No se pudo leer el libro: " + e.getMessage());
-        } catch (IllegalStateException e) {
-            System.out.println(e.getMessage());
-        }
-    }
-
-    // Este método guarda la copia cifrada, descifra el libro y almacena una versión comprimida con Huffman.
-    private void descargar(Libro libro) {
-        try {
-            String rutaCopia = copiarLibroCifrado(libro);
-            Cifrador3DES cifrador = negociarClave();
-            String texto = cifrador.descifrar(ArchivoUtil.leerTexto(rutaCopia));
-            String comprimido = Huffman.comprimir(texto);
-            String rutaDescarga = rutaDescarga(libro.getIsbn());
-            ArchivoUtil.escribirTexto(rutaDescarga, comprimido);
-
-            System.out.println("Libro descargado y comprimido en: " + rutaDescarga);
-            System.out.println("Tamano original: " + texto.length() + " caracteres, comprimido: "
-                    + comprimido.length() + " caracteres.");
-            System.out.println("La copia cifrada se conserva en: " + rutaCopia);
-        } catch (IOException e) {
-            System.out.println("No se pudo descargar el libro: " + e.getMessage());
-        } catch (IllegalStateException e) {
-            System.out.println(e.getMessage());
-        }
-    }
-
-    // Este método comprueba que el usuario sea Premium y permite descomprimir y mostrar una descarga local.
-    private void lecturaLocal() {
-        if (!usuarioActual.isPremium()) {
-            System.out.println("La lectura local es solo para usuarios Premium.");
-            return;
-        }
-        File carpeta = new File(ArchivoUtil.unir(config.getRutaLocal(), "descargas"));
-        String[] archivos = carpeta.list();
-        ListaEnlazada<String> isbns = new ListaEnlazada<>();
-        if (archivos != null) {
-            for (int i = 0; i < archivos.length; i++) {
-                if (archivos[i].endsWith(".huf.txt")) {
-                    isbns.agregar(archivos[i].substring(0, archivos[i].length() - ".huf.txt".length()));
+            config = Configuracion.cargar(archivo);
+            conexion = new ConexionServidor(config);
+            local = new RepositorioLocal(config.getRutaLocal());
+            autenticacionLocal = new AutenticacionLocal(local);
+            sinConexion = forzarLocal;
+            if (!sinConexion) {
+                try {
+                    catalogo = conexion.consultarCatalogo();
+                    mensaje("LISTO", "Conexión segura establecida. Tu catálogo está disponible.");
+                } catch (ConexionServidor.NoDisponibleException e) {
+                    sinConexion = true;
+                    mensaje("SIN CONEXIÓN", "No pudimos contactar la biblioteca. Puedes usar tus descargas preparadas.");
                 }
             }
-        }
-        if (isbns.estaVacia()) {
-            System.out.println("No hay libros descargados todavia.");
+        } catch (IOException e) {
+            mensaje("NO SE PUDO ABRIR", e.getMessage());
+            System.out.println("Revisa la configuración: " + Path.of(archivo).toAbsolutePath());
             return;
         }
-        System.out.println("\n===== LIBROS DESCARGADOS =====");
-        for (int i = 0; i < isbns.getTamano(); i++) {
-            String isbn = isbns.obtener(i);
-            System.out.println((i + 1) + ". " + tituloDe(isbn) + " (ISBN " + isbn + ")");
-        }
-        System.out.println("0. Volver");
-        System.out.print("Seleccione un libro: ");
-        int eleccion = leerEntero();
-        String isbn = isbns.obtener(eleccion - 1);
-        if (isbn == null) {
-            return;
-        }
-        try {
-            String comprimido = ArchivoUtil.leerTexto(rutaDescarga(isbn));
-            String texto = Huffman.descomprimir(comprimido);
-            System.out.println("\n----- " + tituloDe(isbn) + " -----");
-            System.out.println(texto);
-            System.out.println("----- Fin del libro -----");
-        } catch (IOException | IllegalArgumentException e) {
-            System.out.println("No se pudo leer la copia local: " + e.getMessage());
-        }
+        if (sinConexion) System.out.println("El acceso local requiere una cuenta Premium autenticada anteriormente en este equipo.");
+        boolean continuar = true;
+        while (continuar && pantallaLogin()) continuar = menuPrincipal();
+        titulo("HASTA PRONTO", "Gracias por visitar tu biblioteca.");
     }
 
-    // Este método lee el libro cifrado del servidor y lo escribe en copias_cifradas del cliente. La copia permanece disponible.
-    private String copiarLibroCifrado(Libro libro) throws IOException {
-        String cifrado = servidor.leerLibroCifrado(libro.getIsbn());
-        String destino = ArchivoUtil.unir(ArchivoUtil.unir(config.getRutaLocal(), "copias_cifradas"),
-                libro.getIsbn() + ".txt");
-        ArchivoUtil.escribirTexto(destino, cifrado);
-        return destino;
-    }
-
-    // Este método simula ambos lados del cálculo Diffie-Hellman dentro del cliente y prepara el cifrador con el secreto obtenido.
-    private Cifrador3DES negociarClave() {
-        BigInteger publicaCliente = DiffieHellman.calcularPublica(DiffieHellman.PRIVADA_CLIENTE);
-        BigInteger publicaServidor = DiffieHellman.calcularPublica(DiffieHellman.PRIVADA_SERVIDOR);
-        BigInteger secreto = DiffieHellman.calcularSecreto(publicaServidor, DiffieHellman.PRIVADA_CLIENTE);
-        System.out.println("[Diffie-Hellman] Clave publica del cliente:  " + resumen(publicaCliente));
-        System.out.println("[Diffie-Hellman] Clave publica del servidor: " + resumen(publicaServidor));
-        System.out.println("[Diffie-Hellman] Secreto compartido:         " + resumen(secreto));
-        return new Cifrador3DES(secreto);
-    }
-
-    // Este método abrevia un número en hexadecimal para mostrarlo en consola.
-    private String resumen(BigInteger n) {
-        String s = n.toString(16);
-        return s.substring(0, 16) + "..." + s.substring(s.length() - 8);
-    }
-
-    // Este método construye la ruta local del archivo del libro comprimido con extensión .huf.txt.
-    private String rutaDescarga(String isbn) {
-        return ArchivoUtil.unir(ArchivoUtil.unir(config.getRutaLocal(), "descargas"), isbn + ".huf.txt");
-    }
-
-    // Este método busca el título asociado al ISBN; si no existe, devuelve un texto indicando que está fuera del catálogo.
-    private String tituloDe(String isbn) {
-        for (int i = 0; i < catalogo.getTamano(); i++) {
-            if (catalogo.obtener(i).getIsbn().equals(isbn)) {
-                return catalogo.obtener(i).getTitulo();
+    // Console lee usuario y contraseña para evitar mezclar lectores de entrada.
+    private boolean pantallaLogin() {
+        usuarioActual = null;
+        while (true) {
+            titulo("INICIAR SESIÓN", sinConexion ? "Lectura sin conexión" : "Bienvenido a tu biblioteca");
+            System.out.println("Escribe SALIR en Usuario para cerrar la aplicación.");
+            String nombre = leer("Usuario: ").trim();
+            if (nombre.equalsIgnoreCase("SALIR")) return false;
+            if (!nombre.matches("[\\p{L}\\p{N}_.-]{1,64}")) {
+                mensaje("REVISA EL USUARIO", "Usa letras, números, punto, guion o guion bajo, sin espacios.");
+                continue;
+            }
+            System.out.println("La contraseña permanece invisible. Pulsa Enter al terminar.");
+            char[] contrasena = consola.readPassword("Contraseña: ");
+            if (contrasena == null) return false;
+            try {
+                if (contrasena.length == 0) {
+                    mensaje("FALTA LA CONTRASEÑA", "Introduce tu contraseña para continuar.");
+                    continue;
+                }
+                System.out.println("Comprobando tus datos...");
+                if (sinConexion) entrarLocal(nombre, contrasena);
+                else {
+                    try {
+                        Usuario usuario = conexion.autenticar(nombre, HashUtil.sha256(new String(contrasena)));
+                        ListaEnlazada<Libro> actual = conexion.consultarCatalogo();
+                        usuarioActual = usuario;
+                        catalogo = actual;
+                        try {
+                            autenticacionLocal.preparar(usuario, contrasena, catalogo);
+                            if (usuario.isPremium()) mensaje("ACCESO LOCAL LISTO", "Puedes entrar sin conexión y leer los libros que descargues en este equipo.");
+                        } catch (IOException e) {
+                            mensaje("AVISO", "Tu sesión está abierta, pero no pudimos actualizar el acceso sin conexión: " + e.getMessage());
+                        }
+                    } catch (ConexionServidor.NoDisponibleException e) {
+                        sinConexion = true;
+                        mensaje("SIN CONEXIÓN", "Intentaremos acceder con la cuenta local previamente preparada.");
+                        entrarLocal(nombre, contrasena);
+                    }
+                }
+                mensaje("BIENVENIDO", usuarioActual.getNombre() + ". Tu cuenta es " + (usuarioActual.isPremium() ? "Premium." : "Estándar."));
+                return true;
+            } catch (IOException e) {
+                usuarioActual = null;
+                mensaje("NO PUDIMOS INICIAR SESIÓN", e.getMessage());
+                System.out.println("Revisa tus datos e inténtalo nuevamente.");
+            } finally {
+                // Limpia el arreglo incluso cuando falla la autenticación.
+                Arrays.fill(contrasena, '\0');
             }
         }
-        return "(libro fuera del catalogo)";
     }
 
-    // Este método convierte la entrada de consola a un entero y devuelve -1 si el formato no es válido.
-    private int leerEntero() {
-        try {
-            return Integer.parseInt(teclado.nextLine().trim());
-        } catch (NumberFormatException e) {
-            return -1;
+    private void entrarLocal(String nombre, char[] contrasena) throws IOException {
+        AutenticacionLocal.CuentaLocal cuenta = autenticacionLocal.autenticar(nombre, contrasena);
+        usuarioActual = cuenta.getUsuario();
+        catalogo = cuenta.getCatalogo();
+    }
+
+    // Conserva las cuatro opciones del enunciado y explica su disponibilidad.
+    private boolean menuPrincipal() {
+        while (true) {
+            titulo("TU BIBLIOTECA", "¿Qué te gustaría hacer?");
+            mostrarSesion();
+            System.out.println();
+            System.out.println("  1. Explorar catálogo" + (sinConexion ? "  [requiere conexión]" : ""));
+            System.out.println("     Consulta los títulos disponibles y elige tu próxima lectura.");
+            System.out.println("  2. Mis libros descargados" + (usuarioActual.isPremium() ? "" : "  [solo Premium]"));
+            System.out.println("     Abre una descarga guardada en esta computadora.");
+            System.out.println("  3. Cerrar sesión");
+            System.out.println("     Permite que otra persona acceda con su cuenta.");
+            System.out.println("  4. Salir de la aplicación\n");
+            switch (leerOpcion("Elige una opción [1-4]: ", 1, 4)) {
+                case 1:
+                    if (sinConexion) {
+                        mensaje("CATÁLOGO NO DISPONIBLE", "Utiliza la opción 2 para leer tus descargas. Para volver en línea, reconecta y reinicia la aplicación.");
+                        pausa();
+                    } else explorarCatalogo();
+                    break;
+                case 2: lecturaLocal(); break;
+                case 3:
+                    usuarioActual = null;
+                    mensaje("SESIÓN CERRADA", "Puedes iniciar sesión con otra cuenta.");
+                    return true;
+                case 4: usuarioActual = null; return false;
+                default: break;
+            }
         }
+    }
+
+    // Una selección inválida se corrige en el mismo paso.
+    private void explorarCatalogo() {
+        while (true) {
+            titulo("EXPLORAR CATÁLOGO", "Elige un título para comenzar.");
+            mostrarSesion();
+            if (catalogo.estaVacia()) {
+                mensaje("CATÁLOGO VACÍO", "Todavía no hay libros disponibles.");
+                pausa(); return;
+            }
+            System.out.println();
+            for (int i = 0; i < catalogo.getTamano(); i++) mostrarFicha(i + 1, catalogo.obtener(i));
+            System.out.println("  0. Volver a tu biblioteca\n");
+            int seleccion = leerOpcion("Número del libro [0-" + catalogo.getTamano() + "]: ", 0, catalogo.getTamano());
+            if (seleccion == 0) return;
+            Libro libro = catalogo.obtener(seleccion - 1);
+            boolean descarga = false;
+            if (usuarioActual.isPremium()) {
+                titulo("TU PRÓXIMA LECTURA", libro.getTitulo());
+                System.out.println("ISBN: " + libro.getIsbn());
+                System.out.println("\n  1. Leer ahora\n  2. Descargar para leer sin conexión\n  0. Volver al catálogo\n");
+                int accion = leerOpcion("¿Cómo quieres disfrutar este libro? [0-2]: ", 0, 2);
+                if (accion == 0) continue;
+                descarga = accion == 2;
+            }
+            System.out.println(descarga ? "Preparando tu descarga..." : "Abriendo tu libro...");
+            try {
+                String texto = conexion.obtenerLibro(usuarioActual, libro, descarga, local);
+                if (descarga) {
+                    Path archivo = local.guardarDescarga(usuarioActual.getNombre(), libro.getIsbn(), texto);
+                    mensaje("DESCARGA COMPLETA", libro.getTitulo() + " ya está disponible en Mis libros descargados.");
+                    System.out.println("Guardado en: " + archivo);
+                    long original = texto.getBytes(StandardCharsets.UTF_8).length;
+                    System.out.println("Texto original: " + original + " bytes | Descarga: " + Files.size(archivo) + " bytes");
+                    pausa();
+                } else mostrarLibro(libro.getTitulo(), texto);
+            } catch (IOException | IllegalArgumentException e) {
+                mensaje("NO SE PUDO ABRIR EL LIBRO", e.getMessage());
+                if (e instanceof ConexionServidor.NoDisponibleException) {
+                    System.out.println("Puedes regresar a tu biblioteca y utilizar las descargas que ya tengas.");
+                    pausa(); return;
+                }
+                System.out.println("Si cambió tu contraseña o categoría, cierra sesión y vuelve a ingresar.");
+                pausa();
+            }
+        }
+    }
+
+    // Solo enumera las descargas del usuario autenticado y controla los archivos dañados.
+    private void lecturaLocal() {
+        if (!usuarioActual.isPremium()) {
+            mensaje("FUNCIÓN PREMIUM", "Tu cuenta Estándar permite leer en línea. Las descargas y su lectura local requieren Premium.");
+            pausa(); return;
+        }
+        while (true) {
+            titulo("MIS LIBROS DESCARGADOS", "Tus lecturas disponibles en esta computadora.");
+            try {
+                ListaEnlazada<String> isbns = local.listarDescargas(usuarioActual.getNombre());
+                if (isbns.estaVacia()) {
+                    mensaje("TU ESTANTE ESTÁ VACÍO", "Con conexión, entra al catálogo y elige Descargar en un libro.");
+                    pausa(); return;
+                }
+                for (int i = 0; i < isbns.getTamano(); i++) {
+                    String isbn = isbns.obtener(i);
+                    mostrarFicha(i + 1, new Libro(isbn, tituloDe(isbn)));
+                }
+                System.out.println("  0. Volver a tu biblioteca\n");
+                int opcion = leerOpcion("Número del libro [0-" + isbns.getTamano() + "]: ", 0, isbns.getTamano());
+                if (opcion == 0) return;
+                String isbn = isbns.obtener(opcion - 1);
+                System.out.println("Abriendo tu descarga...");
+                try { mostrarLibro(tituloDe(isbn), local.leerDescarga(usuarioActual.getNombre(), isbn)); }
+                catch (IOException | IllegalArgumentException e) {
+                    mensaje("NO SE PUDO LEER LA DESCARGA", e.getMessage());
+                    System.out.println("Si el archivo está dañado, vuelve a descargarlo cuando tengas conexión.");
+                    pausa();
+                }
+            } catch (IOException e) {
+                mensaje("NO SE PUDIERON CONSULTAR TUS DESCARGAS", e.getMessage());
+                pausa(); return;
+            }
+        }
+    }
+
+    private String tituloDe(String isbn) {
+        for (int i = 0; i < catalogo.getTamano(); i++)
+            if (catalogo.obtener(i).getIsbn().equals(isbn)) return catalogo.obtener(i).getTitulo();
+        return "Libro descargado";
+    }
+
+    // Presenta páginas de 20 líneas, sin modificar el contenido guardado.
+    private void mostrarLibro(String nombre, String texto) {
+        titulo("LECTURA", nombre);
+        if (texto.isEmpty()) {
+            mensaje("LIBRO SIN CONTENIDO", "Este archivo no contiene texto.");
+            pausa(); return;
+        }
+        int impresas = 0, pagina = 1;
+        String[] lineas = texto.split("\\R", -1);
+        for (int i = 0; i < lineas.length; i++) {
+            String restante = lineas[i];
+            do {
+                int cantidad = restante.codePointCount(0, restante.length());
+                int corte = restante.offsetByCodePoints(0, Math.min(ANCHO_LECTURA, cantidad));
+                if (corte < restante.length()) {
+                    int espacio = restante.lastIndexOf(' ', corte - 1);
+                    if (espacio > corte / 2) corte = espacio + 1;
+                }
+                System.out.println(restante.substring(0, corte));
+                restante = restante.substring(corte);
+                impresas++;
+                if (impresas == LINEAS_POR_PAGINA && (!restante.isEmpty() || i < lineas.length - 1)) {
+                    System.out.println("\n--- Página " + pagina + " ---");
+                    while (true) {
+                        String opcion = leer("Enter: continuar | 0: volver: ").trim();
+                        if (opcion.equals("0")) return;
+                        if (opcion.isEmpty()) break;
+                        System.out.println("Pulsa Enter para continuar o escribe 0 para volver.");
+                    }
+                    impresas = 0; pagina++;
+                    titulo("LECTURA - PÁGINA " + pagina, nombre);
+                }
+            } while (!restante.isEmpty());
+        }
+        System.out.println("\n--- Fin del libro. Gracias por leer. ---");
+        pausa();
+    }
+
+    private void titulo(String principal, String detalle) {
+        System.out.println("\n" + BORDE);
+        System.out.println("  " + principal);
+        if (detalle != null && !detalle.isEmpty()) System.out.println("  " + detalle);
+        System.out.println(BORDE);
+    }
+    private void mostrarSesion() {
+        System.out.println("Usuario: " + usuarioActual.getNombre() + " | Cuenta: "
+                + (usuarioActual.isPremium() ? "Premium" : "Estándar") + " | "
+                + (sinConexion ? "Sin conexión" : "En línea"));
+    }
+    private void mostrarFicha(int numero, Libro libro) {
+        System.out.println("  " + numero + ". " + libro.getTitulo());
+        System.out.println("     ISBN: " + libro.getIsbn() + "\n");
+    }
+    private void mensaje(String encabezado, String texto) {
+        System.out.println("\n[" + encabezado + "] " + texto);
+    }
+    private void pausa() { leer("\nPulsa Enter para continuar..."); }
+
+    // Las entradas inválidas repiten la pregunta y no expulsan al usuario del menú.
+    private int leerOpcion(String pregunta, int minimo, int maximo) {
+        while (true) {
+            String entrada = leer(pregunta).trim();
+            try {
+                int numero = Integer.parseInt(entrada);
+                if (numero >= minimo && numero <= maximo) return numero;
+            } catch (NumberFormatException e) { /* Se solicita otra selección. */ }
+            System.out.println("Escribe un número entre " + minimo + " y " + maximo + ".");
+        }
+    }
+    private String leer(String pregunta) {
+        String texto = consola.readLine("%s", pregunta);
+        if (texto == null) throw new NoSuchElementException();
+        return texto;
     }
 }
