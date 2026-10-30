@@ -2,7 +2,6 @@ package librosdigitales;
 
 import java.io.IOException;
 import java.math.BigInteger;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.security.*;
 import java.util.Base64;
@@ -44,7 +43,8 @@ public final class GeneradorServidor {
         String[] textos;
         if(origen==null) {
             libros=RepositorioServidor.analizarCatalogo("9780000000001|El viaje de la ceiba\n9780000000002|Cronicas del lago\n9780000000003|Manual del buen programador\n");
-            usuarios="ana|"+HashUtil.sha256("ana123")+"|true\nluis|"+HashUtil.sha256("luis123")+"|false\n";
+            usuarios =
+            "gerber|" + HashUtil.sha256("gerber123") + "|true\n" + "mogo|" + HashUtil.sha256("mogo123") + "|false\n";
             textos=new String[]{"Capitulo 1\nHabia una vez una ceiba enorme en medio de la plaza.\nTodos los ninos del pueblo jugaban bajo su sombra.\n",
                     "Capitulo 1\nEl lago amanecio cubierto de niebla y nadie se atrevio a salir.\nLas lanchas esperaron hasta el mediodia.\n",
                     "Capitulo 1\nPrimero compile, despues pregunte.\nLa documentacion permite comprender el programa.\n"};
